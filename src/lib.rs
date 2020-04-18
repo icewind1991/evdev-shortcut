@@ -7,9 +7,9 @@ use err_derive::Error;
 
 mod keycodes;
 
-#[cfg(feature = "foo")]
+#[cfg(feature = "listener")]
 mod listener;
-#[cfg(feature = "foo")]
+#[cfg(feature = "listener")]
 pub use listener::ShortcutListener;
 
 #[derive(Debug, Clone, Error)]

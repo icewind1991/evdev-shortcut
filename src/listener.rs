@@ -5,6 +5,7 @@ use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use crate::{Shortcut, DeviceOpenError, Key};
+use std::path::Path;
 
 pub struct ShortcutListener {
     shortcuts: Arc<Mutex<HashSet<Shortcut>>>,
@@ -17,7 +18,7 @@ impl ShortcutListener {
         }
     }
 
-    pub fn listen(&self, devices: &[&str]) -> Result<Receiver<Shortcut>, DeviceOpenError> {
+    pub fn listen<P: AsRef<Path>>(&self, devices: &[P]) -> Result<Receiver<Shortcut>, DeviceOpenError> {
         let mut devices = devices
             .iter()
             .map(|path| Ok(Device::open(path).map_err(|_| DeviceOpenError)?))

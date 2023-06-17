@@ -81,7 +81,11 @@ impl ShortcutListener {
     }
 
     /// Returns `true` if the shortcut was previously listened to
-    pub fn remove(&self, shortcut: Shortcut) -> bool {
-        self.shortcuts.lock().unwrap().remove(&shortcut)
+    pub fn remove(&self, shortcut: &Shortcut) -> bool {
+        self.shortcuts.lock().unwrap().remove(shortcut)
+    }
+
+    pub fn has(&self, shortcut: &Shortcut) -> bool {
+        self.shortcuts.lock().unwrap().contains(shortcut)
     }
 }

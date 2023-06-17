@@ -155,8 +155,8 @@ impl FromStr for ModifierList {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Display, FromStr)]
 #[display("{modifiers}-{key}")]
 pub struct Shortcut {
-    modifiers: ModifierList,
-    key: Key,
+    pub modifiers: ModifierList,
+    pub key: Key,
 }
 
 #[cfg(test)]

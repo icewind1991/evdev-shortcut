@@ -75,11 +75,13 @@ impl ShortcutListener {
         })
     }
 
-    pub fn add(&self, shortcut: Shortcut) {
-        self.shortcuts.lock().unwrap().insert(shortcut);
+    /// Returns `true` if the shortcut was not previously listened to
+    pub fn add(&self, shortcut: Shortcut) -> bool {
+        self.shortcuts.lock().unwrap().insert(shortcut)
     }
 
-    pub fn remove(&self, shortcut: Shortcut) {
-        self.shortcuts.lock().unwrap().remove(&shortcut);
+    /// Returns `true` if the shortcut was previously listened to
+    pub fn remove(&self, shortcut: Shortcut) -> bool {
+        self.shortcuts.lock().unwrap().remove(&shortcut)
     }
 }

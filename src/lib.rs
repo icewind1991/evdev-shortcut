@@ -1,7 +1,7 @@
 pub use keycodes::Key;
 use parse_display::{Display, FromStr, ParseError};
 use std::collections::HashSet;
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display, Formatter};
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -89,7 +89,7 @@ impl Modifier {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Copy, Default)]
 pub struct ModifierList(u8);
 
 impl ModifierList {
@@ -152,11 +152,39 @@ impl FromStr for ModifierList {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq, Display, FromStr)]
-#[display("{modifiers}-{key}")]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Shortcut {
     pub modifiers: ModifierList,
     pub key: Key,
+}
+
+impl FromStr for Shortcut {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some((modifiers, key)) = s.split_once('-') {
+            Ok(Shortcut {
+                modifiers: modifiers.parse()?,
+                key: key.parse()?,
+            })
+        } else {
+
+            Ok(Shortcut {
+                modifiers: ModifierList::default(),
+                key: s.parse()?,
+            })
+        }
+    }
+}
+
+impl Display for Shortcut {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.modifiers.is_empty() {
+            write!(f, "{}", self.key)
+        } else {
+            write!(f, "{}-{}", self.modifiers, self.key)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -164,6 +192,7 @@ mod tests {
     use test_case::test_case;
     use crate::{Key, Modifier, ModifierList, Shortcut};
 
+    #[test_case("KeyP", Shortcut::new(& [], Key::KeyP))]
     #[test_case("<Ctrl>-KeyP", Shortcut::new(& [Modifier::Ctrl], Key::KeyP))]
     #[test_case("<LeftAlt><LeftCtrl>-KeyLeft", Shortcut::new(& [Modifier::LeftCtrl, Modifier::LeftAlt], Key::KeyLeft))]
     fn shortcut_parse_display_test(s: &str, shortcut: Shortcut) {

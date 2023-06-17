@@ -8,6 +8,7 @@ use async_stream::stream;
 use futures::pin_mut;
 use futures::{Stream, StreamExt};
 use futures::stream::{iter};
+use tracing::{debug, trace, info};
 
 #[derive(Default)]
 pub struct ShortcutListener {
@@ -24,7 +25,11 @@ impl ShortcutListener {
 
         let devices = devices
             .iter()
-            .map(|path| Device::open(path).map_err(|_| DeviceOpenError))
+            .map(|path| {
+                let res = Device::open(path).map_err(|_| DeviceOpenError);
+                debug!(device = ?path.as_ref(), success = res.is_ok(), "opening input device");
+                res
+            })
             .collect::<Result<Vec<Device>, DeviceOpenError>>()?;
         let events = iter(devices.into_iter().flat_map(|device| device.into_event_stream()))
             .flatten();
@@ -36,7 +41,7 @@ impl ShortcutListener {
             pin_mut!(events);
 
             while let Some(Ok(event)) = events.next().await {
-                // dbg!(&event);
+                trace!(?event, "evdev event");
                 if let Ok(key) = Key::try_from(event.code()) {
                     match event.value() {
                         1 => active_keys.insert(key),
@@ -52,12 +57,14 @@ impl ShortcutListener {
                     let was_triggered = pressed_shortcuts.contains(&shortcut);
                     if is_triggered && !was_triggered {
                         pressed_shortcuts.insert(shortcut.clone());
+                        info!(?shortcut, "pressed");
                         yield ShortcutEvent {
                             shortcut,
                             state: ShortcutState::Pressed,
                         };
                     } else if !is_triggered && was_triggered {
                         pressed_shortcuts.remove(&shortcut);
+                        info!(?shortcut, "released");
                         yield ShortcutEvent {
                             shortcut,
                             state: ShortcutState::Released,

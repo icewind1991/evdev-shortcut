@@ -235,10 +235,19 @@ mod triggered_tests {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum ShortcutState {
     Pressed,
     Released,
+}
+
+impl ShortcutState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ShortcutState::Pressed => "pressed",
+            ShortcutState::Released => "released",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

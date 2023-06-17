@@ -3,20 +3,22 @@ use parse_display::{Display, FromStr, ParseError};
 use std::collections::HashSet;
 use std::fmt::{self, Display};
 use std::str::FromStr;
-use err_derive::Error;
+use thiserror::Error;
 
 mod keycodes;
 
 #[cfg(feature = "listener")]
 mod listener;
+
 #[cfg(feature = "listener")]
 pub use listener::ShortcutListener;
 
 #[derive(Debug, Clone, Error)]
-#[error(display = "Failed to open device")]
+#[error("Failed to open device")]
 pub struct DeviceOpenError;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Display, FromStr)]
+#[repr(u8)]
 pub enum Modifier {
     Alt,
     LeftAlt,
@@ -32,8 +34,30 @@ pub enum Modifier {
     RightMeta,
 }
 
+const ALL_MODIFIERS: &[Modifier] = &[
+    Modifier::Alt,
+    Modifier::LeftAlt,
+    Modifier::RightAlt,
+    Modifier::Ctrl,
+    Modifier::LeftCtrl,
+    Modifier::RightCtrl,
+    Modifier::Shift,
+    Modifier::LeftShift,
+    Modifier::RightShift,
+    Modifier::Meta,
+    Modifier::LeftMeta,
+    Modifier::RightMeta,
+];
+
+const COMBINED_MODIFIERS: &[Modifier] = &[
+    Modifier::Alt,
+    Modifier::Ctrl,
+    Modifier::Shift,
+    Modifier::Meta,
+];
+
 impl Modifier {
-    pub fn as_mask(&self) -> u8 {
+    pub fn mask(&self) -> u8 {
         match self {
             Modifier::Alt => 0b00000011,
             Modifier::LeftAlt => 0b00000001,
@@ -65,20 +89,45 @@ impl Modifier {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct ModifierList(Vec<Modifier>);
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Copy)]
+pub struct ModifierList(u8);
 
 impl ModifierList {
-    pub fn as_mask(&self) -> u8 {
-        self.0
+    pub fn new(modifiers: &[Modifier]) -> Self {
+        ModifierList(modifiers
             .iter()
-            .fold(0, |mask, modifier| mask | modifier.as_mask())
+            .fold(0, |mask, modifier| mask | modifier.mask()))
+    }
+
+    pub fn mask(&self) -> u8 {
+        self.0
+    }
+
+    pub fn modifiers(&self) -> impl Iterator<Item=Modifier> {
+        let mask = self.mask();
+        ALL_MODIFIERS.iter().copied().filter(move |modifier| {
+            for combined in COMBINED_MODIFIERS {
+                // if <Ctrl> is enabled, don't emit <LeftCtrl> and <RightCtrl>
+                if combined != modifier && combined.mask() & modifier.mask() == modifier.mask() && combined.mask() & mask == combined.mask() {
+                    return false;
+                }
+            }
+            modifier.mask() & mask == modifier.mask()
+        })
+    }
+
+    pub fn len(&self) -> u32 {
+        self.modifiers().count() as u32
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mask() == 0
     }
 }
 
 impl Display for ModifierList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for modifier in self.0.iter() {
+        for modifier in self.modifiers() {
             write!(f, "<{}>", modifier)?;
         }
         Ok(())
@@ -89,18 +138,17 @@ impl FromStr for ModifierList {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(ModifierList(
-            s.split('>')
-                .filter(|part| !part.is_empty())
-                .map(|part| {
-                    if !part.starts_with('<') {
-                        Err(ParseError::with_message("Invalid modifier"))
-                    } else {
-                        Ok(part[1..].parse::<Modifier>()?)
-                    }
-                })
-                .collect::<Result<Vec<Modifier>, ParseError>>()?,
-        ))
+        let modifiers = s.split('>')
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                if !part.starts_with('<') {
+                    Err(ParseError::with_message("Invalid modifier"))
+                } else {
+                    Ok(part[1..].parse::<Modifier>()?)
+                }
+            })
+            .collect::<Result<Vec<Modifier>, ParseError>>()?;
+        Ok(ModifierList::new(&modifiers))
     }
 }
 
@@ -113,44 +161,50 @@ pub struct Shortcut {
 
 #[cfg(test)]
 mod tests {
-    use crate::keyboard::{Key, Modifier, Shortcut};
     use test_case::test_case;
+    use crate::{Key, Modifier, ModifierList, Shortcut};
 
-    #[test_case("<Ctrl>-KeyP", Shortcut::new(vec ! [Modifier::Ctrl], Key::KeyP))]
-    #[test_case("<LeftCtrl><LeftAlt>-KeyLeft", Shortcut::new(vec ! [Modifier::LeftCtrl, Modifier::LeftAlt], Key::KeyLeft))]
+    #[test_case("<Ctrl>-KeyP", Shortcut::new(& [Modifier::Ctrl], Key::KeyP))]
+    #[test_case("<LeftAlt><LeftCtrl>-KeyLeft", Shortcut::new(& [Modifier::LeftCtrl, Modifier::LeftAlt], Key::KeyLeft))]
     fn shortcut_parse_display_test(s: &str, shortcut: Shortcut) {
         assert_eq!(s, format!("{}", shortcut));
 
         assert_eq!(shortcut, s.parse().unwrap());
     }
+
+    #[test_case(& [Modifier::Ctrl])]
+    #[test_case(& [Modifier::LeftAlt, Modifier::LeftCtrl])]
+    #[test_case(& [Modifier::Shift, Modifier::Meta])]
+    fn test_modifier_list(modifiers: &[Modifier]) {
+        assert_eq!(modifiers.to_vec(), ModifierList::new(modifiers).modifiers().collect::<Vec<_>>())
+    }
 }
 
 impl Shortcut {
-    pub fn new(modifiers: Vec<Modifier>, key: Key) -> Self {
+    pub fn new(modifiers: &[Modifier], key: Key) -> Self {
         Shortcut {
-            modifiers: ModifierList(modifiers),
+            modifiers: ModifierList::new(modifiers),
             key,
         }
     }
 
     pub fn identifier(&self) -> String {
         self.to_string()
-            .replace('<', "")
-            .replace('>', "")
+            .replace(['<', '>'], "")
             .replace('-', "_")
     }
 }
 
 impl Shortcut {
     pub fn is_triggered(&self, active_keys: &HashSet<Key>) -> bool {
-        let desired_mask = self.modifiers.as_mask();
+        let desired_mask = self.modifiers.mask();
         let pressed_mask = active_keys
             .iter()
             .fold(0, |mask, key| mask | Modifier::mask_from_key(*key));
 
         let desired_presses = desired_mask & pressed_mask;
         let modifiers_match = (desired_presses == pressed_mask)
-            && (desired_presses.count_ones() == self.modifiers.0.len() as u32);
+            && (desired_presses.count_ones() == self.modifiers.len());
 
         modifiers_match && active_keys.contains(&self.key)
     }
@@ -158,7 +212,7 @@ impl Shortcut {
 
 #[cfg(test)]
 mod triggered_tests {
-    use crate::keyboard::{Key, Shortcut};
+    use crate::{Key, Shortcut};
     use test_case::test_case;
 
     #[test_case("<Ctrl>-KeyP", & [] => false)]
@@ -179,4 +233,16 @@ mod triggered_tests {
         let shortcut: Shortcut = s.parse().unwrap();
         shortcut.is_triggered(&keys.into_iter().copied().collect())
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ShortcutState {
+    Pressed,
+    Released,
+}
+
+#[derive(Debug, Clone)]
+pub struct ShortcutEvent {
+    pub shortcut: Shortcut,
+    pub state: ShortcutState,
 }

@@ -15,7 +15,7 @@ async fn main() {
 
     pin_mut!(stream);
 
-    while let Some(shortcut) = stream.next().await {
-        dbg!(shortcut);
+    while let Some(event) = stream.next().await {
+        println!("{} {}", event.shortcut, event.state);
     }
 }

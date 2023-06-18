@@ -10,6 +10,25 @@ use futures::{Stream, StreamExt};
 use futures::stream::{iter};
 use tracing::{debug, trace, info};
 
+/// A listener for shortcut events
+///
+/// Example:
+///
+/// ```rust,no_run
+/// # use std::path::PathBuf;
+/// # use glob::GlobError;
+/// # use evdev_shortcut::{ShortcutListener, Shortcut, Modifier, Key};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let listener = ShortcutListener::new();
+/// listener.add(Shortcut::new(&[Modifier::Meta], Key::KeyN));
+///
+/// let devices =
+///     glob::glob("/dev/input/by-id/*-kbd")?.collect::<Result<Vec<PathBuf>, GlobError>>()?;
+///
+/// let stream = listener.listen(&devices)?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Default)]
 pub struct ShortcutListener {
     shortcuts: Arc<Mutex<HashSet<Shortcut>>>,
@@ -20,14 +39,18 @@ impl ShortcutListener {
         ShortcutListener::default()
     }
 
+    /// Listen for shortcuts on the provided set of input devices.
+    ///
+    /// Note that you need to register shortcuts using [add](ShortcutListener::add) to get any events.
     pub fn listen<P: AsRef<Path>>(&self, devices: &[P]) -> Result<impl Stream<Item=ShortcutEvent>, DeviceOpenError> {
         let shortcuts = self.shortcuts.clone();
 
         let devices = devices
             .iter()
             .map(|path| {
-                let res = Device::open(path).map_err(|_| DeviceOpenError);
-                debug!(device = ?path.as_ref(), success = res.is_ok(), "opening input device");
+                let path = path.as_ref();
+                let res = Device::open(path).map_err(|_| DeviceOpenError { device: path.into() });
+                debug!(device = ?path, success = res.is_ok(), "opening input device");
                 res
             })
             .collect::<Result<Vec<Device>, DeviceOpenError>>()?;
@@ -85,6 +108,7 @@ impl ShortcutListener {
         self.shortcuts.lock().unwrap().remove(shortcut)
     }
 
+    /// Check if a shortcut is currently being listened for
     pub fn has(&self, shortcut: &Shortcut) -> bool {
         self.shortcuts.lock().unwrap().contains(shortcut)
     }

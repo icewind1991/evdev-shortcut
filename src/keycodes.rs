@@ -1,6 +1,7 @@
 use num_enum::TryFromPrimitive;
 use parse_display::{Display, FromStr};
 
+/// evdev keycode
 #[derive(Copy, Clone, Debug, TryFromPrimitive, PartialEq, Eq, Hash, Display, FromStr)]
 #[repr(u16)]
 pub enum Key {

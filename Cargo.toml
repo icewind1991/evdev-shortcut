@@ -1,6 +1,6 @@
 [package]
 name = "evdev-shortcut"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2021"
 description = "Global shortcuts using evdev"

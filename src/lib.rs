@@ -1,7 +1,42 @@
+//! Global keyboard shortcuts using evdev.
+//!
+//! By connecting to the input devices directly with evdev the shortcuts can work regardless of the environment,
+//! they will work under X11, wayland and in the terminal.
+//!
+//! This does come at the cost of having to run the program with elevated permissions.
+//! See [shortcutd](https://docs.rs/shortcutd/latest/shortcutd/) for a solution to running the elevated input handling in a separate process.
+//!
+//! Example:
+//!
+//! ```rust,no_run
+//! # use std::path::PathBuf;
+//! # use glob::GlobError;
+//! # use evdev_shortcut::{ShortcutListener, Shortcut, Modifier, Key};
+//! # use tokio::pin;
+//! # use futures::stream::StreamExt;
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let listener = ShortcutListener::new();
+//! listener.add(Shortcut::new(&[Modifier::Meta], Key::KeyN));
+//!
+//! let devices =
+//!     glob::glob("/dev/input/by-id/*-kbd")?.collect::<Result<Vec<PathBuf>, GlobError>>()?;
+//!
+//! let stream = listener.listen(&devices)?;
+//! pin!(stream);
+//!
+//! while let Some(event) = stream.next().await {
+//!     println!("{} {}", event.shortcut, event.state);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+
 pub use keycodes::Key;
 use parse_display::{Display, FromStr, ParseError};
 use std::collections::HashSet;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::path::PathBuf;
 use std::str::FromStr;
 use thiserror::Error;
 
@@ -13,10 +48,14 @@ mod listener;
 #[cfg(feature = "listener")]
 pub use listener::ShortcutListener;
 
+/// Error emitted when an input device can't be opened
 #[derive(Debug, Clone, Error)]
-#[error("Failed to open device")]
-pub struct DeviceOpenError;
+#[error("Failed to open device {device:?}")]
+pub struct DeviceOpenError {
+    pub device: PathBuf,
+}
 
+/// Modifier key for shortcuts
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Display, FromStr)]
 #[repr(u8)]
 pub enum Modifier {
@@ -89,6 +128,7 @@ impl Modifier {
     }
 }
 
+/// Set of modifier keys for shortcuts
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Copy, Default)]
 pub struct ModifierList(u8);
 
@@ -152,6 +192,29 @@ impl FromStr for ModifierList {
     }
 }
 
+/// A keyboard shortcut consisting of zero or more modifier keys and a non-modifier key
+///
+/// Examples:
+///
+/// Create from keys:
+///
+/// ```rust
+/// # use evdev_shortcut::{Shortcut, Modifier, Key};
+/// # fn main() {
+/// let shortcut = Shortcut::new(&[Modifier::Meta], Key::KeyN);
+/// # }
+/// ```
+///
+/// Parse from string:
+///
+/// ```rust
+/// # use evdev_shortcut::{Shortcut, Modifier, Key};
+/// # use std::str::FromStr;
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let shortcut: Shortcut = "<Meta>-KeyN".parse()?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Shortcut {
     pub modifiers: ModifierList,
@@ -168,7 +231,6 @@ impl FromStr for Shortcut {
                 key: key.parse()?,
             })
         } else {
-
             Ok(Shortcut {
                 modifiers: ModifierList::default(),
                 key: s.parse()?,
@@ -264,6 +326,7 @@ mod triggered_tests {
     }
 }
 
+/// Whether the shortcut was pressed or released
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum ShortcutState {
     Pressed,
@@ -279,6 +342,13 @@ impl ShortcutState {
     }
 }
 
+impl Display for ShortcutState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Event emitted when a shortcut is pressed or released.
 #[derive(Debug, Clone)]
 pub struct ShortcutEvent {
     pub shortcut: Shortcut,
